@@ -110,7 +110,7 @@ async def gen(msg: types.Message):
     sent = await msg.answer(text)
     await bot.send_message(msg.chat.id, "Responde con `.a` (una) o `.n` (todas)", reply_to_message_id=sent.message_id)
 
-# Resto de comandos (.s .m .a .n .info .add) - puedes añadirlos después
+# Agrega aquí los demás comandos (.s .m .a .n .info .add) si quieres
 
 @app.route('/')
 def home():
