@@ -110,37 +110,7 @@ async def gen(msg: types.Message):
     sent = await msg.answer(text)
     await bot.send_message(msg.chat.id, "Responde con `.a` (una) o `.n` (todas)", reply_to_message_id=sent.message_id)
 
-@dp.message(F.text.startswith(".s "))
-async def single_auth(msg: types.Message):
-    uid = str(msg.from_user.id)
-    users = load_users()
-    if users.get(uid, {}).get("credits", 0) < 0.7:
-        return await msg.answer("❌ Créditos insuficientes.")
-
-    try:
-        data = msg.text.split()[1]
-        cc, mes, ano, cvv = data.split('|')
-        if len(ano) == 2: ano = "20" + ano
-    except:
-        return await msg.answer("Uso: `.s 4766642766196260|12|2032|345`")
-
-    status = check_card(cc, mes, ano, cvv)
-    cost = 1.2 if status == "LIVE" else 0.7
-    users[uid]["credits"] -= cost
-    save_users(users)
-
-    emoji = "✅" if status == "LIVE" else "❌"
-    await msg.answer(f"""
-水口 - Time: {random.uniform(1.8, 4.9):.2f}'s 😺 水
-━━Card Information━━
-• Card: {cc[:6]}xxxxxx{cc[-4:]}|{mes}|{ano}|{cvv}
-• Status: {emoji} {status}
-• Gateway: Auth
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-Author: @{msg.from_user.username or msg.from_user.first_name} | Créditos: {users[uid]['credits']:.2f}
-    """)
-
-# (Agrega aquí los demás comandos .m .a .n .info .add si quieres, pero con esto ya deberías poder deploy)
+# ... (agrega aquí los demás comandos .s .m .a .n .info .add si quieres)
 
 @app.route('/')
 def home():
