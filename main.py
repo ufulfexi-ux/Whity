@@ -266,7 +266,7 @@ async def add_credits(msg: types.Message):
 
 @app.route('/')
 def home():
-    return "Bot Whitey"
+    return "Bot Wikimedia Gravy - EDEN-XANDER corriendo 24/7 🔥"
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
@@ -278,7 +278,7 @@ async def webhook():
     return "OK", 200
 
 def run_bot():
-    print(Fore.GREEN + "Bot iniciado en Render 24/7")
+    print("Bot iniciado en Render 24/7")
     asyncio.run(dp.start_polling(bot))
 
 if __name__ == "__main__":
