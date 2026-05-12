@@ -110,11 +110,11 @@ async def gen(msg: types.Message):
     sent = await msg.answer(text)
     await bot.send_message(msg.chat.id, "Responde con `.a` (una) o `.n` (todas)", reply_to_message_id=sent.message_id)
 
-# ... (agrega aquí los demás comandos .s .m .a .n .info .add si quieres)
+# Resto de comandos (.s .m .a .n .info .add) - puedes añadirlos después
 
 @app.route('/')
 def home():
-    return "Bot Wikimedia Gravy corriendo 24/7 🔥"
+    return "Bot corriendo 24/7 🔥"
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
