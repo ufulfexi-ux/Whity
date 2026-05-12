@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: whity-bot
+    env: python
+    plan: free
+    pythonVersion: "3.12"
+    buildCommand: pip install -r requirements.txt
+    startCommand: python main.py
+    repo: https://github.com/ufulfexi-ux/Whity
+    branch: main
