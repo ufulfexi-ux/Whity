@@ -265,6 +265,11 @@ By: @{msg.from_user.username or msg.from_user.first_name} | Créditos restantes:
 def home():
     return "Bot Wikimedia Gravy - EDEN-XANDER corriendo 24/7 🔥"
 
+async def on_startup():
+    print(Fore.GREEN + "Eliminando webhook anterior...")
+    await bot.delete_webhook()
+    print(Fore.GREEN + "✅ Webhook eliminado - Iniciando polling...")
+
 def run_bot():
     print(Fore.GREEN + "Bot iniciado en Render 24/7 - EDEN-XANDER (Polling Mode)")
     asyncio.run(dp.start_polling(bot, handle_signals=False))
@@ -272,6 +277,11 @@ def run_bot():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     print(f"Flask corriendo en puerto {port}")
+    
+    # Eliminar webhook al iniciar
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(on_startup())
     
     thread = threading.Thread(target=run_bot, daemon=True)
     thread.start()
