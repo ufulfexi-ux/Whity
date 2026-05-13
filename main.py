@@ -16,6 +16,7 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", 7709461067))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://whity-21sy.onrender.com/webhook")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -145,7 +146,7 @@ Price (Both $0.99):
 ⚡️¡Más compras = Más ahorro!♥️
     """)
 
-# ================= COMANDOS CON / =================
+# ================= COMANDOS =================
 @dp.message(F.text.startswith(("/gen", ".gen")))
 async def gen(msg: types.Message):
     try:
@@ -273,8 +274,13 @@ async def webhook():
         pass
     return "OK", 200
 
-async def main_bot():
+async def on_startup():
     print(Fore.GREEN + "Bot iniciado en Render 24/7 - EDEN-XANDER")
+    await bot.set_webhook(WEBHOOK_URL)
+    print(f"Webhook configurado: {WEBHOOK_URL}")
+
+async def main_bot():
+    await on_startup()
     await dp.start_polling(bot)
 
 if __name__ == "__main__":
