@@ -3,7 +3,6 @@ import json
 import random
 import re
 import os
-import threading
 from datetime import datetime
 from flask import Flask, request
 from aiogram import Bot, Dispatcher, types
@@ -17,6 +16,7 @@ app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID", 7709461067))
+WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://whity-21sy.onrender.com/webhook")
 
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
@@ -265,16 +265,26 @@ By: @{msg.from_user.username or msg.from_user.first_name} | Créditos restantes:
 def home():
     return "Bot Wikimedia Gravy - EDEN-XANDER corriendo 24/7 🔥"
 
-def run_bot():
-    print(Fore.GREEN + "Bot iniciado en Render 24/7 - EDEN-XANDER (Polling Mode)")
-    asyncio.run(dp.start_polling(bot))
+@app.route('/webhook', methods=['POST'])
+async def webhook():
+    try:
+        update = types.Update.model_validate(request.json)
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        print(f"Webhook error: {e}")
+    return "OK", 200
+
+async def on_startup():
+    print(Fore.GREEN + "Bot iniciado - Configurando webhook...")
+    await bot.set_webhook(WEBHOOK_URL)
+    print(f"✅ Webhook configurado: {WEBHOOK_URL}")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     print(f"Flask corriendo en puerto {port}")
     
-    # Iniciar bot en hilo separado
-    thread = threading.Thread(target=run_bot, daemon=True)
-    thread.start()
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.run_until_complete(on_startup())
     
     app.run(host="0.0.0.0", port=port)
