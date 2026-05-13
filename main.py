@@ -296,19 +296,111 @@ async def add_credits_cmd(msg: types.Message):
     if msg.from_user.id != ADMIN_ID:
         return await msg.answer("❌ No autorizado.")
     try:
-        _, target, cant = msg.text.split()
-        add_credits(target, float(cant))
-        await msg.answer(f"✅ Créditos añadidos a {target}")
+        parts = msg.text.split()
+        target = parts[1]
+        cant = float(parts[2])
+
+        # Soporta @username o ID
+        if target.startswith("@"):
+            try:
+                user = await bot.get_chat(target)
+                uid = str(user.id)
+            except:
+                return await msg.answer("❌ No pude encontrar ese usuario.")
+        else:
+            uid = target
+
+        add_credits(uid, cant)
+        await msg.answer(f"""
+✅ Créditos Añadidos
+━━━━━━━━━
+👤 Usuario: {target}
+💰 Añadidos: {cant}
+🔹 Total ahora: {load_users().get(uid, {}).get('credits', 0):.2f}
+━━━━━━━━━
+        """)
     except:
-        await msg.answer("Uso: `/add ID CANTIDAD`")
+        await msg.answer("Uso: `/add 7709461067 100`\nO `/add @blackyzz 100`")
+
+
+@dp.message(F.text.startswith(("/ban", ".ban")))
+async def ban_user(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return await msg.answer("❌ No autorizado.")
+    try:
+        target = msg.text.split()[1]
+        if target.startswith("@"):
+            user = await bot.get_chat(target)
+            uid = str(user.id)
+        else:
+            uid = target
+
+        users = load_users()
+        if uid in users:
+            users[uid]["banned"] = True
+            save_users(users)
+            await bot.send_message(uid, "🚫 **Has sido baneado.**\nYa no puedes usar el bot.")
+            await msg.answer(f"✅ Usuario {target} **baneado**.")
+        else:
+            await msg.answer("❌ Usuario no encontrado.")
+    except:
+        await msg.answer("Uso: `/ban @usuario` o `/ban ID`")
+
+
+@dp.message(F.text.startswith(("/unban", ".unban")))
+async def unban_user(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return await msg.answer("❌ No autorizado.")
+    try:
+        target = msg.text.split()[1]
+        if target.startswith("@"):
+            user = await bot.get_chat(target)
+            uid = str(user.id)
+        else:
+            uid = target
+
+        users = load_users()
+        if uid in users:
+            users[uid]["banned"] = False
+            save_users(users)
+            await bot.send_message(uid, "✅ **Has sido desbaneado.**\nYa puedes volver a usar el bot.")
+            await msg.answer(f"✅ Usuario {target} **desbaneado**.")
+        else:
+            await msg.answer("❌ Usuario no encontrado.")
+    except:
+        await msg.answer("Uso: `/unban @usuario` o `/unban ID`")
+
+
+@dp.message(F.text.startswith(("/stats", ".stats")))
+async def admin_stats(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return await msg.answer("❌ No autorizado.")
+    
+    users = load_users()
+    if not users:
+        return await msg.answer("No hay usuarios registrados aún.")
+    
+    text = "📊 **Estadísticas Globales**\n━━━━━━━━━━━━━━\n"
+    total_credits = 0
+    for uid, data in users.items():
+        credits = data.get("credits", 0)
+        banned = "🚫 Baneado" if data.get("banned", False) else "✅ Activo"
+        total_credits += credits
+        text += f"• `{uid}` → {credits:.2f} credits | {banned}\n"
+    
+    text += f"\n━━━━━━━━━━━━━━\nTotal créditos en el bot: **{total_credits:.2f}**"
+    await msg.answer(text)
+
 
 @app.route('/')
 def home():
     return "Bot EDEN-XANDER - 24/7 🔥"
 
+
 def run_bot():
     print(Fore.GREEN + "Bot iniciado - EDEN-XANDER 24/7")
     asyncio.run(dp.start_polling(bot, handle_signals=False))
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
