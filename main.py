@@ -261,7 +261,9 @@ async def single_auth(msg: types.Message):
     if load_users().get(uid, {}).get("credits", 0) < 0.7:
         return await msg.answer("❌ Créditos insuficientes.")
 
-    processing = await msg.answer("🔄 **Procesando Auth...**")
+    processing = await msg.answer("🔄 **Procesando...**")
+    start = time.time()
+
     try:
         data = msg.text.split()[1]
         cc, mes, ano, cvv = data.split("|")
@@ -271,19 +273,21 @@ async def single_auth(msg: types.Message):
         cost = 1.2 if status == "LIVE" else 0.7
         deduct_credits(uid, cost)
 
-        masked = f"{cc[:6]}xxxxxx{cc[-4:]}"
-        result_text = f"""
-━━━━━━━━━━━━━━
-• Card: {masked}
-• Status: {'✅ LIVE' if status == 'LIVE' else '❌ DEAD'}
+        elapsed = round(time.time() - start, 2)
+        status_text = "Success ✅" if status == "LIVE" else "Sorry Dead ❌"
+
+        result = f"""水口 - Time: {elapsed}'s 😺 水
+━━Card Information━━
+• Card: {cc}|{mes}|{ano}|{cvv}
+• Status: {status_text}
 • Gateway: Stripe Auth
-• Costo: {cost} credits
-━━━━━━━━━━━━━━
-By: @{msg.from_user.username or msg.from_user.first_name}
-        """
-        await processing.edit_text(result_text)
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+{bin_lookup(cc[:6])}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+Author: @{msg.from_user.username or msg.from_user.first_name} | Créditos: {load_users().get(uid, {}).get('credits', 0):.2f}"""
+        await processing.edit_text(result)
     except:
-        await processing.edit_text("❌ Formato incorrecto.\nUso: `/s 4111111111111111|12|2028|123`")
+        await processing.edit_text("❌ Formato incorrecto.")
 
 
 # ================= SINGLE ADYEN CHARGE =================
@@ -293,7 +297,9 @@ async def single_adyen(msg: types.Message):
     if load_users().get(uid, {}).get("credits", 0) < 1.5:
         return await msg.answer("❌ Créditos insuficientes.")
 
-    processing = await msg.answer("🔄 **Procesando Charge Adyen...**")
+    processing = await msg.answer("🔄 **Procesando Charge...**")
+    start = time.time()
+
     try:
         data = msg.text.split()[1]
         cc, mes, ano, cvv = data.split("|")
@@ -303,22 +309,25 @@ async def single_adyen(msg: types.Message):
         cost = 3.0 if status == "LIVE" else 1.5
         deduct_credits(uid, cost)
 
-        masked = f"{cc[:6]}xxxxxx{cc[-4:]}"
-        result_text = f"""
-━━━━━━━━━━━━━━
-• Card: {masked}
-• Status: {'✅ LIVE' if status == 'LIVE' else '❌ DEAD'}
-• Gateway: Adyen Charge
-• Costo: {cost} credits
-━━━━━━━━━━━━━━
-By: @{msg.from_user.username or msg.from_user.first_name}
-        """
-        await processing.edit_text(result_text)
+        elapsed = round(time.time() - start, 2)
+        status_text = "Success ✅" if status == "LIVE" else "Sorry Dead ❌"
+
+        result = f"""水口 - Time: {elapsed}'s 😺 水
+━━Card Information━━
+• Card: {cc}|{mes}|{ano}|{cvv}
+• Status: {status_text}
+• Gateway: Adyen CCN NR
+• Charge: $0.99
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+{bin_lookup(cc[:6])}
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+Author: @{msg.from_user.username or msg.from_user.first_name} | Créditos: {load_users().get(uid, {}).get('credits', 0):.2f} | AdyenBot"""
+        await processing.edit_text(result)
     except:
-        await processing.edit_text("❌ Formato incorrecto.\nUso: `/a 4090136985256692|12|2030|641`")
+        await processing.edit_text("❌ Formato incorrecto.")
 
 
-# ================= MASS STRIPE AUTH =================
+# ================= MASS STRIPE =================
 @dp.message(F.text.startswith(("/m ", ".m ")))
 async def mass_auth(msg: types.Message):
     uid = str(msg.from_user.id)
@@ -326,49 +335,69 @@ async def mass_auth(msg: types.Message):
         return await msg.answer("❌ Créditos insuficientes.")
 
     processing = await msg.answer("🔄 **Procesando Mass Auth...**")
+    start = time.time()
     lines = msg.text.splitlines()[1:] if "\n" in msg.text else [msg.text.split(maxsplit=1)[1]]
     results = []
+
     for line in lines:
         line = line.strip()
         if "|" not in line: continue
         try:
             cc, mes, ano, cvv = line.split("|")
             if len(ano) == 2: ano = "20" + ano
-            status = stripe_auth(cc, mes, ano, cvv)
-            cost = 1.2 if status == "LIVE" else 0.7
-            deduct_credits(uid, cost)
+            st = stripe_auth(cc, mes, ano, cvv)
+            deduct_credits(uid, 1.2 if st == "LIVE" else 0.7)
+            status_text = "Success ✅" if st == "LIVE" else "Sorry Dead ❌"
             masked = f"{cc[:6]}xxxxxx{cc[-4:]}"
-            results.append(f"{masked} → {'✅ LIVE' if status == 'LIVE' else '❌ DEAD'}")
+            results.append(f"• {masked} → {status_text}")
         except:
             continue
-    final = f"━━━━━━━━━━━━━━\n" + "\n".join(results) + f"\n\nProcessed: {len(results)} cards\nBy: @{msg.from_user.username or msg.from_user.first_name}"
+
+    elapsed = round(time.time() - start, 2)
+    final = f"""水口 - Time: {elapsed}'s 😺 水
+━━Mass Stripe Auth━━
+""" + "\n".join(results) + f"""
+
+Processed: {len(results)} cards
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+Author: @{msg.from_user.username or msg.from_user.first_name} | Créditos: {load_users().get(uid, {}).get('credits', 0):.2f}"""
     await processing.edit_text(final)
 
 
-# ================= MASS ADYEN CHARGE =================
+# ================= MASS ADYEN =================
 @dp.message(F.text.startswith(("/n ", ".n ")))
 async def mass_adyen(msg: types.Message):
     uid = str(msg.from_user.id)
     if load_users().get(uid, {}).get("credits", 0) < 1.5:
         return await msg.answer("❌ Créditos insuficientes.")
 
-    processing = await msg.answer("🔄 **Procesando Mass Charge Adyen...**")
+    processing = await msg.answer("🔄 **Procesando Mass Charge...**")
+    start = time.time()
     lines = msg.text.splitlines()[1:] if "\n" in msg.text else [msg.text.split(maxsplit=1)[1]]
     results = []
+
     for line in lines:
         line = line.strip()
         if "|" not in line: continue
         try:
             cc, mes, ano, cvv = line.split("|")
             if len(ano) == 2: ano = "20" + ano
-            status = adyen_check(cc, mes, ano, cvv)
-            cost = 3.0 if status == "LIVE" else 1.5
-            deduct_credits(uid, cost)
+            st = adyen_check(cc, mes, ano, cvv)
+            deduct_credits(uid, 3.0 if st == "LIVE" else 1.5)
+            status_text = "Success ✅" if st == "LIVE" else "Sorry Dead ❌"
             masked = f"{cc[:6]}xxxxxx{cc[-4:]}"
-            results.append(f"{masked} → {'✅ LIVE' if status == 'LIVE' else '❌ DEAD'}")
+            results.append(f"• {masked} → {status_text}")
         except:
             continue
-    final = f"━━━━━━━━━━━━━━\n" + "\n".join(results) + f"\n\nProcessed: {len(results)} cards\nBy: @{msg.from_user.username or msg.from_user.first_name}"
+
+    elapsed = round(time.time() - start, 2)
+    final = f"""水口 - Time: {elapsed}'s 😺 水
+━━Mass Adyen Charge━━
+""" + "\n".join(results) + f"""
+
+Processed: {len(results)} cards
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+Author: @{msg.from_user.username or msg.from_user.first_name} | Créditos: {load_users().get(uid, {}).get('credits', 0):.2f} | AdyenBot"""
     await processing.edit_text(final)
 # ================= REFERIDOS =================
 @dp.message(F.text.startswith(("/addr", ".addr")))
