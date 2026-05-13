@@ -1,3 +1,4 @@
+import time
 import asyncio
 import json
 import random
@@ -280,7 +281,7 @@ async def single_auth(msg: types.Message):
 ━━Card Information━━
 • Card: {cc}|{mes}|{ano}|{cvv}
 • Status: {status_text}
-• Gateway: Stripe Auth
+• Gateway: ???? ?? ????
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
 {bin_lookup(cc[:6])}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -348,8 +349,7 @@ async def mass_auth(msg: types.Message):
             st = stripe_auth(cc, mes, ano, cvv)
             deduct_credits(uid, 1.2 if st == "LIVE" else 0.7)
             status_text = "Success ✅" if st == "LIVE" else "Sorry Dead ❌"
-            masked = f"{cc[:6]}xxxxxx{cc[-4:]}"
-            results.append(f"• {masked} → {status_text}")
+            results.append(f"• {cc}|{mes}|{ano}|{cvv} → {status_text}")
         except:
             continue
 
@@ -385,8 +385,7 @@ async def mass_adyen(msg: types.Message):
             st = adyen_check(cc, mes, ano, cvv)
             deduct_credits(uid, 3.0 if st == "LIVE" else 1.5)
             status_text = "Success ✅" if st == "LIVE" else "Sorry Dead ❌"
-            masked = f"{cc[:6]}xxxxxx{cc[-4:]}"
-            results.append(f"• {masked} → {status_text}")
+            results.append(f"• {cc}|{mes}|{ano}|{cvv} → {status_text}")
         except:
             continue
 
