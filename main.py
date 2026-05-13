@@ -33,8 +33,8 @@ def save_users(users):
     with open(DB_FILE, "w", encoding="utf-8") as f:
         json.dump(users, f, indent=4)
 
-# ================= CHECKER =================
-def check_card(cc, mes, ano, cvv):
+# ================= CHECKER (ejecutado en hilo) =================
+def _check_card_sync(cc, mes, ano, cvv):
     try:
         s = requests.Session()
         s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
@@ -73,6 +73,9 @@ def check_card(cc, mes, ano, cvv):
         return "LIVE"
     except:
         return "DEAD"
+
+async def check_card(cc, mes, ano, cvv):
+    return await asyncio.to_thread(_check_card_sync, cc, mes, ano, cvv)
 
 # ================= GEN =================
 def luhn(card):
@@ -213,7 +216,7 @@ async def single_auth(msg: types.Message):
         data = msg.text.split()[1]
         cc, mes, ano, cvv = data.split("|")
         if len(ano) == 2: ano = "20" + ano
-        status = check_card(cc, mes, ano, cvv)
+        status = await check_card(cc, mes, ano, cvv)
         cost = 1.2 if status == "LIVE" else 0.7
         u["credits"] -= cost
         users[uid] = u
@@ -242,7 +245,7 @@ async def single_charge(msg: types.Message):
         data = msg.text.split()[1]
         cc, mes, ano, cvv = data.split("|")
         if len(ano) == 2: ano = "20" + ano
-        status = check_card(cc, mes, ano, cvv)
+        status = await check_card(cc, mes, ano, cvv)
         cost = 3.0 if status == "LIVE" else 1.5
         u["credits"] -= cost
         users[uid] = u
