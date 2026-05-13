@@ -270,23 +270,22 @@ async def webhook():
     try:
         update = types.Update.model_validate(request.json)
         await dp.feed_update(bot, update)
-    except:
-        pass
+    except Exception as e:
+        print(f"Webhook error: {e}")
     return "OK", 200
 
 async def on_startup():
-    print(Fore.GREEN + "Bot iniciado en Render 24/7 - EDEN-XANDER")
+    print(Fore.GREEN + "Bot iniciado - Configurando webhook...")
     await bot.set_webhook(WEBHOOK_URL)
-    print(f"Webhook configurado: {WEBHOOK_URL}")
-
-async def main_bot():
-    await on_startup()
-    await dp.start_polling(bot)
+    print(f"✅ Webhook configurado: {WEBHOOK_URL}")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     print(f"Flask corriendo en puerto {port}")
+    
+    # Configurar webhook al iniciar
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.create_task(main_bot())
+    loop.run_until_complete(on_startup())
+    
     app.run(host="0.0.0.0", port=port)
